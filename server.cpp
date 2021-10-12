@@ -8,7 +8,7 @@ void Session::do_write(std::string message, yield_context yield) {
   boost::system::error_code ecode;
 
   self->sock.async_send(buffer(message.c_str(), message.length()), yield[ecode]);
-  if(ecode){ std::cerr << "Sus writing\n"; }
+  if(ecode){ std::cerr << "Sus writing\n"; self->active = false; }
       
   std::cout << "Response " << message << " sent to " << &self->sock << "\n";
   std::cout << "\n\n";
@@ -32,11 +32,14 @@ void Session::do_read(yield_context yield) {
 void Session::do_echo(yield_context yield){
   auto self(shared_from_this());
   
-  for(;;){
-    do_read(yield);
+  spawn(iocontext_, [self](yield_context yield){
+    for(;;){
+      if(!self->active) { break; }
+      self->do_read(yield);
 
-    do_write(parseInput(yield), yield);
-  }
+      self->do_write(self->parseInput(yield), yield);
+    }
+  });
 }
 
 bool Session::isEqualTo(std::string it, std::string that){
@@ -44,15 +47,20 @@ bool Session::isEqualTo(std::string it, std::string that){
   return (it.compare(that) == 0);
 }
 
-void Session::sendList(std::string toSend, yield_context yield){
+std::string Session::handleList(yield_context yield){
   auto self(shared_from_this());
   auto data_sock = std::make_shared<tcp::socket>(iocontext_);
 
+  std::string toSend = "";
+
+  for (const auto & file : directory_iterator(this->currentPath)){
+        toSend.append(file.path());
+        toSend.append("\r\n");
+      }  
+
+  do_write("150 sending LIST data", yield);
+
   boost::system::error_code ecode;
-
-  /*acceptor_.async_accept(*data_sock, yield[ecode]);
-
-  data_sock->async_write_some(buffer(toSend.c_str(), toSend.size()), yield[ecode]);*/
 
   spawn(iocontext_, [self, data_sock, toSend](yield_context yield){
     boost::system::error_code ecode;
@@ -61,6 +69,7 @@ void Session::sendList(std::string toSend, yield_context yield){
 
     if(ecode){ std::cerr << "Error sending list dir\n"; }
   });
+  return("226 Directory data sent");
 }
 
 std::string Session::handleChdir(std::string goTo){
@@ -110,13 +119,45 @@ std::string Session::handleRetr(std::string fname, yield_context yield){
           boost::system::error_code ecode;
           self->acceptor_.async_accept(*data_sock, yield[ecode]);
           std::cout << data_sock->local_endpoint() << " --- " << data_sock->remote_endpoint() << "\n";
-          sleep(3);
           data_sock->async_write_some(buffer(buff, buffsize), yield[ecode]);
 
     });
   }
   return("226 file transfer successful");
 }
+
+std::string Session::handleStor(std::string toGet, yield_context yield){
+  auto self(shared_from_this());
+  path filename(toGet);
+  filename = currentPath / filename;
+
+  std::cout << std::string(filename);
+  if(exists(filename)){
+    return("450 file allready exists");
+  }
+
+  auto data_sock = std::make_shared<tcp::socket>(iocontext_);
+
+  
+  do_write("150 ready to accept data", yield);
+  boost::system::error_code ecode;
+
+  spawn(iocontext_, [self, data_sock, toGet, filename](yield_context yield){
+    boost::system::error_code ecode;
+    self->acceptor_.async_accept(*data_sock, yield[ecode]);
+    
+    std::shared_ptr<std::vector<char>> buff = std::make_shared<std::vector<char>>(1024*1024*1);
+
+    std::fstream fs(filename, std::ios::out | std::ios::binary);
+
+    async_read(*data_sock, boost::asio::buffer(*buff), transfer_at_least(buff->size()), yield[ecode]);
+    buff->shrink_to_fit();
+    fs.write(buff->data(), static_cast<std::streamsize>(buff->size()));
+
+    });
+  return("250 upload successful");
+}
+
 
 std::string Session::parseInput(yield_context yield){
   auto self(shared_from_this());
@@ -125,7 +166,7 @@ std::string Session::parseInput(yield_context yield){
 
   std::cout << "Echo input is: " << input << '\n';
 
-  std::string response = "502 bad command";
+  std::string response = "250 bad command";
   std::regex word_regex("(\\S+)");
   
   if(input.size() == 0){
@@ -142,17 +183,9 @@ std::string Session::parseInput(yield_context yield){
       response = "257 \"" + std::string(this->currentPath) + "\" is the current directory";
     }
     else if (isEqualTo(command, "list")) {
-      for (const auto & file : directory_iterator(this->currentPath)){
-        response.append(file.path());
-        response.append("\r\n");
-      }  
-
-      do_write("150 sending LIST data", yield);
-      sendList(response, yield);
-      return("226 Directory data sent");
-    }
+      return(handleList(yield));
+        }
     else if (isEqualTo(command, "pasv")){
-
       if(acceptor_.is_open()){
           acceptor_.close();
       }
@@ -179,6 +212,8 @@ std::string Session::parseInput(yield_context yield){
     }
     else if (isEqualTo(command, "quit")){
       response = "221 connection closed by client";
+      self->sock.close();
+      self->active = false;
     }
     else if (isEqualTo(command, "feat")){
       response = "211 End";
@@ -231,6 +266,15 @@ std::string Session::parseInput(yield_context yield){
     else if (isEqualTo(command, "type")) {
       response = "200 Switching to BINARY mode";
     }
+    else if (isEqualTo(command, "dele")){
+      auto file = queryParams.front();
+
+      remove(file);
+      response = "250 deleted successfully";
+    }
+    else if (isEqualTo(command, "stor")){
+      return(handleStor(queryParams.front(), yield));
+    }
   }
   return response;
 }
@@ -240,11 +284,11 @@ void Session::start(){
 
   std::cout << "---NEW CONNECTION---\n";
   
-  std::cout << this->sock.local_endpoint() << " --- " << this->sock.remote_endpoint() << '\n';
-
   spawn(this->sock.get_executor(), 
       [self](yield_context yield){
         self->do_write("220 (vsFTPd 3.0.3)", yield); 
+        
+      
 
         self->do_echo(yield);
       });
