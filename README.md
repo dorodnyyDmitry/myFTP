@@ -12,7 +12,7 @@ Simple asynchronous FTP server with browse/download functions written using boos
 - cmake
 - Ninja
 ## Build
-1. cmake -G -Ninja .
+1. cmake -G Ninja .
 2. ninja
 ## Usage
 * ./myFTP "port number" "number of threads"
