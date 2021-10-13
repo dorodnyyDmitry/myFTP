@@ -209,7 +209,7 @@ std::string Session::parseInput(yield_context yield){
       }
       stream << ((port >> 8) & 0xff) << "," << (port & 0xff);
 
-      response = stream.str();
+      return(stream.str());
     }
     else if (isEqualTo(command, "quit")){
       response = "221 connection closed by client";
