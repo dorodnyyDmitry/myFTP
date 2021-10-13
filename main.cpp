@@ -1,38 +1,29 @@
 #include "server.h"
-#include <boost/asio/strand.hpp>
-#include <iostream>
 
 int main(int argc, char* argv[]){
-
-//  spawn(iocontext, 
-//      [&iocontext, port = std::atoi(argv[1]), dir = std::string(argv[2])](yield_context yield){
-//        tcp::endpoint ep{tcp::v4(), (uint16_t) port};
-//        tcp::acceptor acceptor(iocontext, ep);
-//
-//    
-//        for(;;){
-//
-//          boost::system::error_code ecode;
-//          tcp::socket sock(iocontext);
-//
-//          acceptor.listen();
-//
-//          acceptor.async_accept(sock, yield[ecode]);
-//
-//          if(!ecode){ std::make_shared<Session>(std::move(sock), std::move(dir), iocontext)->start(); }
-//
-//          std::cout << "After accept\n";
-//
-//        }
-//      });
-
   if(argc != 3){
     std::cerr << "Wrong params! Usage: \"myFTP\" \"port\" \"threads\"\n";
     return(-1);
   }
+  
+  unsigned int port;
+  std::size_t nthreads; 
 
-  unsigned int port = std::stoi(argv[1]);
-  std::size_t nthreads = std::stoi(argv[2]);
+  try{
+    port = std::stoi(argv[1]);
+  }
+  catch(std::invalid_argument exception){
+    std::cerr << "Bad port!\n";
+    return(-1);
+  }
+
+  try{
+    nthreads = std::stoi(argv[2]);
+  }
+  catch(std::invalid_argument exception){
+    std::cerr << "Bad threads!\n";
+    return(-1);
+  }
 
   io_context iocontext;
   thread_pool threadpool(nthreads);

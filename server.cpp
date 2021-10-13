@@ -82,6 +82,7 @@ std::string Session::handleChdir(std::string goTo){
           return("450 action not taken, not a directory!");
         }
         this->currentPath.assign(newWD);
+        current_path(this->currentPath);
         return("250 change dir ok");
 }
 
@@ -227,6 +228,7 @@ std::string Session::parseInput(yield_context yield){
       } 
       else{
         currentPath = current_path().parent_path();
+        current_path(currentPath);
         return("200 chdir ok");
       }
     }
@@ -269,11 +271,25 @@ std::string Session::parseInput(yield_context yield){
     else if (isEqualTo(command, "dele")){
       auto file = queryParams.front();
 
+      if(!exists(file)){
+        return("450 action not taken, file doesnt exist");
+      }
+      if(status(file).type() != file_type::regular){
+        return("450 action not taken, this is not a file");
+      }
+
       remove(file);
       response = "250 deleted successfully";
     }
     else if (isEqualTo(command, "stor")){
       return(handleStor(queryParams.front(), yield));
+    }
+    else if (isEqualTo(command, "rmd")){
+
+      if(rmdir(queryParams.front().c_str()) == 0){
+        return("250 deleted successfully");
+      }
+      else { return("450 action not taken"); }
     }
   }
   return response;
@@ -281,14 +297,10 @@ std::string Session::parseInput(yield_context yield){
 
 void Session::start(){
   auto self(shared_from_this());
-
-  std::cout << "---NEW CONNECTION---\n";
   
   spawn(this->sock.get_executor(), 
       [self](yield_context yield){
         self->do_write("220 (vsFTPd 3.0.3)", yield); 
-        
-      
 
         self->do_echo(yield);
       });
