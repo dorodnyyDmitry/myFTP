@@ -3,8 +3,8 @@
 Simple asynchronous FTP server with browse/download functions written using boost::asio
 ## Features
 * FTP passive mode 
-* Filesystem browsing commands (pwd, cd, cdup, ls)
-* Downloading files in binary stream mode
+* Filesystem browsing commands (pwd, cd, ls, rm,)
+* Downloading/uploading files in binary stream mode
 * Usability tested with netkit-ftp client
 ## Requirements
 - C++17
